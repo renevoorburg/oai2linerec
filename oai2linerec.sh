@@ -102,16 +102,19 @@ url="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET"
 while [ -n "$resumptiontoken" ] ; do
     # harvest block of oai-identifiers
     wget -q -t 3 -O - "$url" > $TMPFILE
-    echo -n "#"
+
+    # prepare url for harvest of next block
+    resumptiontoken=`xmllint --xpath "$RESUMPTION_XP" $TMPFILE`
+    url="$BASE?verb=ListIdentifiers&resumptionToken=$resumptiontoken"
+    
+    # show progress:
+    echo
+    echo $resumptiontoken
     
     # extract oai-identifiers and harvest each one of them:
     for i in `xmllint --xpath "$IDENTIFIERS_XP" $TMPFILE | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'` ; do
         harvest $i
     done
-
-    # prepare url for harvest of next block
-    resumptiontoken=`xmllint --xpath "$RESUMPTION_XP" $TMPFILE`
-    url="$BASE?verb=ListIdentifiers&resumptionToken=$resumptiontoken"
 
 done
 rm $TMPFILE
