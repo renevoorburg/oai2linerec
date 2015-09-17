@@ -18,7 +18,7 @@ OPTIONS:
    -h      Show this message
    -s	   Specify a set to be harvested
    -p	   Choose which metadata format ('metadataPrefix') to harvest 
-   -o      Define teh output file records will be append to
+   -o      Define the output file records will be append to
    -f      Define a 'from' date.
    -t      Define an 'until' date
 
