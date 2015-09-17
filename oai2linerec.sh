@@ -36,7 +36,7 @@ harvest()
 }
 
 # initialize vars:
-IDENTIFIERS_XP="//*[local-name()='identifier']"
+IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
 RESUMPTION_XP="//*[local-name()='resumptionToken']/text()"
 METADATA_XP="//*[local-name()='metadata']"
 OUT=''
@@ -106,11 +106,11 @@ while [ -n "$resumptiontoken" ] ; do
     # prepare url for harvest of next block
     resumptiontoken=`xmllint --xpath "$RESUMPTION_XP" $TMPFILE`
     url="$BASE?verb=ListIdentifiers&resumptionToken=$resumptiontoken"
-    
+
     # show progress:
     echo
     echo $resumptiontoken
-    
+
     # extract oai-identifiers and harvest each one of them:
     for i in `xmllint --xpath "$IDENTIFIERS_XP" $TMPFILE | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'` ; do
         harvest $i
@@ -120,3 +120,4 @@ done
 rm $TMPFILE
 
 echo "done"
+
