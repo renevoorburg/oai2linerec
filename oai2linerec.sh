@@ -98,7 +98,7 @@ export XMLLINT_INDENT=''
 resumptiontoken="dummy"
 url="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET"
 
-# harvest all identifiers and create a directory for each one
+# harvest all identifiers and harvest records for each one
 while [ -n "$resumptiontoken" ] ; do
     # harvest block of oai-identifiers
     wget -q -t 3 -O - "$url" > $TMPFILE
