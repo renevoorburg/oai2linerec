@@ -3,7 +3,7 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2015-09-17
+# @version: 2017-04-07
 
 usage()
 {
@@ -30,10 +30,28 @@ EOF
 
 harvest()
 {
-    wget -q -t 3 -O - "$BASE?verb=GetRecord$PREFIX&identifier=$1" | xmllint --xpath "//*[local-name()='metadata']" - | xmllint --format - | perl -pe 's@\n@@gi' >> $OUT
+    $GET "$BASE?verb=GetRecord$PREFIX&identifier=$1" | xmllint --xpath "//*[local-name()='metadata']" - | xmllint --format - | perl -pe 's@\n@@gi' >> $OUT
     echo >> $OUT
     echo -n "."
 }
+
+# test requirements:
+if ! hash perl 2>/dev/null; then
+    echo "Requires perl. Not found. Exiting."
+    exit
+fi
+if hash curl 2>/dev/null; then
+        GET='curl -s'
+elif hash wget  2>/dev/null; then
+	GET='wget -q -t 3 -O -'
+else
+    echo "Requires curl or wget. Not found. Exiting."
+    exit
+fi
+if ! hash xmllint 2>/dev/null; then
+    echo "Requires xmllint. Not found. Exiting."
+    exit
+fi
 
 # initialize vars:
 IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
@@ -46,7 +64,6 @@ BASE=''
 SET=''
 PREFIX=''
 TMPFILE="tmp$$.xml"
-
 # read commandline opions
 while getopts "ho:f:t:b:s:p:" OPTION ; do
      case $OPTION in
@@ -78,7 +95,6 @@ while getopts "ho:f:t:b:s:p:" OPTION ; do
              ;;
      esac
 done
-
 # do have the required info?:
 if [ -z "$BASE" ] ; then
 	usage
@@ -88,36 +104,25 @@ if [ -z "$OUT" ] ; then
 	usage
 	exit
 fi
-
-
-
 # now we should be able to go harvesting:
 export XMLLINT_INDENT=''
-
 ## set initial vars for first harvest-iteration:
 resumptiontoken="dummy"
 url="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET"
-
 # harvest all identifiers and harvest records for each one
 while [ -n "$resumptiontoken" ] ; do
     # harvest block of oai-identifiers
-    wget -q -t 3 -O - "$url" > $TMPFILE
-
+    $GET "$url" > $TMPFILE
     # prepare url for harvest of next block
     resumptiontoken=`xmllint --xpath "$RESUMPTION_XP" $TMPFILE`
     url="$BASE?verb=ListIdentifiers&resumptionToken=$resumptiontoken"
-
     # show progress:
     echo
     echo $resumptiontoken
-
     # extract oai-identifiers and harvest each one of them:
     for i in `xmllint --xpath "$IDENTIFIERS_XP" $TMPFILE | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'` ; do
         harvest $i
     done
-
 done
 rm $TMPFILE
-
 echo "done"
-
