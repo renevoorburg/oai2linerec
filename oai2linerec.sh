@@ -3,7 +3,7 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2017-04-07
+# @version: 2017-08-15
 
 usage()
 {
@@ -16,8 +16,9 @@ Requires perl, wget and xmllint (version 20708 or better, part of the libxml2-ut
 
 OPTIONS:
    -h      Show this message
+   -c      Compress output
    -s	   Specify a set to be harvested
-   -p	   Choose which metadata format ('metadataPrefix') to harvest 
+   -p	   Choose which metadata format ('metadataPrefix') to harvest
    -o      Define the output file records will be append to
    -f      Define a 'from' date.
    -t      Define an 'until' date
@@ -30,11 +31,9 @@ EOF
 
 harvest()
 {
-    $GET "$BASE?verb=GetRecord$PREFIX&identifier=$1" | xmllint --xpath "//*[local-name()='metadata']" - | xmllint --format - | perl -pe 's@\n@@gi' >> $OUT
-    echo >> $OUT
+    $GET "$BASE?verb=GetRecord$PREFIX&identifier=$1" | xmllint --xpath "//*[local-name()='metadata']" - | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT
     echo -n "."
 }
-
 # test requirements:
 if ! hash perl 2>/dev/null; then
     echo "Requires perl. Not found. Exiting."
@@ -52,7 +51,6 @@ if ! hash xmllint 2>/dev/null; then
     echo "Requires xmllint. Not found. Exiting."
     exit
 fi
-
 # initialize vars:
 IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
 RESUMPTION_XP="//*[local-name()='resumptionToken']/text()"
@@ -65,12 +63,14 @@ SET=''
 PREFIX=''
 TMPFILE="tmp$$.xml"
 # read commandline opions
-while getopts "ho:f:t:b:s:p:" OPTION ; do
+while getopts "hco:f:t:b:s:p:" OPTION ; do
      case $OPTION in
          h)
              usage
              exit 1
              ;;
+	 c)  COMPRESS=true
+	     ;;
          o)
              OUT="$OPTARG"
              ;;
@@ -95,6 +95,7 @@ while getopts "ho:f:t:b:s:p:" OPTION ; do
              ;;
      esac
 done
+
 # do have the required info?:
 if [ -z "$BASE" ] ; then
 	usage
@@ -104,6 +105,20 @@ if [ -z "$OUT" ] ; then
 	usage
 	exit
 fi
+
+# compr. tool available?:
+if [ "$COMPRESS" == "true" ] ; then
+
+        if ! hash gzip 2>/dev/null; then
+                echo "Compression requires gzip. Not found. Exiting."
+                exit
+        fi
+	GZIP=gzip
+	OUT=$OUT.gz
+else
+	GZIP=cat
+fi
+
 # now we should be able to go harvesting:
 export XMLLINT_INDENT=''
 ## set initial vars for first harvest-iteration:
