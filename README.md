@@ -1,5 +1,5 @@
 # oai2linerec
-Shell script for harvesting metadata records from OAI-PMH repositories. 
+Unix shell script for harvesting metadata records from OAI-PMH repositories. Runs on macOS and Unix / Linux.
 
 Records are aggregated in a single file, serialized to a single record per line. Optionally, individual records can be compressed to save space.
 
