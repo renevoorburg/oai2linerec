@@ -3,11 +3,15 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2017-08-15
+# @version: 2017-08-22
+
+# 2017-08-15: Added gzip compression.
+# 2017-08-22: Refactored to use retry-function for robustness, no more temporary files.
+
 
 usage()
 {
-cat << EOF
+    cat << EOF
 usage: $0 [OPTIONS] -o [outfile] -b [baseURL]
 
 This is a simple OAI-PMH harvester. It harvests records, compresses the <metadata> node and its content to a single line
@@ -17,24 +21,77 @@ Requires perl, wget and xmllint (version 20708 or better, part of the libxml2-ut
 OPTIONS:
    -h      Show this message
    -c      Compress output
-   -s	   Specify a set to be harvested
-   -p	   Choose which metadata format ('metadataPrefix') to harvest
+   -s      Specify a set to be harvested
+   -p      Choose which metadata format ('metadataPrefix') to harvest
    -o      Define the output file records will be append to
    -f      Define a 'from' date.
    -t      Define an 'until' date
 
 EXAMPLE:
-$0 -s sgd:register -p dcx -f 2012-01-20 -o results.txt -b http://services.kb.nl/mdo/oai
+$0 -c -s sgd:register -p dcx -f 2012-01-20 -o results.txt -b http://services.kb.nl/mdo/oai
 
 EOF
 }
 
-harvest()
+fail()
 {
-    $GET "$BASE?verb=GetRecord$PREFIX&identifier=$1" | xmllint --xpath "//*[local-name()='metadata']" - | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT
+    local msg=$1
+
+    echo $msg >&2
+    if [[ $msg == fatal* ]] || [[ $msg == Fatal* ]] ; then
+        exit 1
+    else
+        return 1
+    fi
+}
+
+retry() 
+{
+    local msg=$1
+    local cmd="${@: 2}"
+
+    local n=1
+    local max=3
+    local delay=3
+
+    while true; do
+        $cmd && break || {
+        if [[ $n -lt $max ]]; then
+            ((n++))
+            sleep $delay;
+        else
+            fail $msg
+        fi
+        }
+    done
+}
+
+harvest_record()
+{
+    local id=$1
+
+    $GET "$BASE?verb=GetRecord$PREFIX&identifier=$id" | (xmllint --xpath "//*[local-name()='metadata']" - || return 1) | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT
+ 
+    #show progress:    
     echo -n "."
 }
-# test requirements:
+
+harvest_identifiers()
+{
+    local url=$1
+
+    local identifiers_xml="`$GET "$url" || return 1`"
+
+    IDENTIFIERS="`echo "$identifiers_xml" | (xmllint --xpath "$IDENTIFIERS_XP" - || return 1) | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'`" 
+    RESUMPTIONTOKEN="`echo "$identifiers_xml" | xmllint --xpath "$RESUMPTION_XP" - || return 1`"
+    URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
+    
+    # show progress:
+    echo
+    echo $RESUMPTIONTOKEN
+}
+
+# test basic requirements:
 if ! hash perl 2>/dev/null; then
     echo "Requires perl. Not found. Exiting."
     exit
@@ -42,7 +99,7 @@ fi
 if hash curl 2>/dev/null; then
         GET='curl -s'
 elif hash wget  2>/dev/null; then
-	GET='wget -q -t 3 -O -'
+        GET='wget -q -t 3 -O -'
 else
     echo "Requires curl or wget. Not found. Exiting."
     exit
@@ -51,7 +108,8 @@ if ! hash xmllint 2>/dev/null; then
     echo "Requires xmllint. Not found. Exiting."
     exit
 fi
-# initialize vars:
+
+# declare global vars:
 IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
 RESUMPTION_XP="//*[local-name()='resumptionToken']/text()"
 METADATA_XP="//*[local-name()='metadata']"
@@ -61,7 +119,10 @@ UNTIL=''
 BASE=''
 SET=''
 PREFIX=''
-TMPFILE="tmp$$.xml"
+URL=''
+RESUMPTIONTOKEN='dummy'
+GZIP=cat
+
 # read commandline opions
 while getopts "hco:f:t:b:s:p:" OPTION ; do
      case $OPTION in
@@ -69,8 +130,8 @@ while getopts "hco:f:t:b:s:p:" OPTION ; do
              usage
              exit 1
              ;;
-	 c)  COMPRESS=true
-	     ;;
+         c)  COMPRESS=true
+             ;;
          o)
              OUT="$OPTARG"
              ;;
@@ -86,9 +147,9 @@ while getopts "hco:f:t:b:s:p:" OPTION ; do
          b)
              BASE="$OPTARG"
              ;;
-	 p)
-	     PREFIX="&metadataPrefix=$OPTARG"
-	     ;;
+         p)
+             PREFIX="&metadataPrefix=$OPTARG"
+             ;;
          ?)
              usage
              exit
@@ -96,48 +157,33 @@ while getopts "hco:f:t:b:s:p:" OPTION ; do
      esac
 done
 
-# do have the required info?:
+# set and test parameters:
 if [ -z "$BASE" ] ; then
-	usage
-	exit
+    usage
+    exit
 fi
 if [ -z "$OUT" ] ; then
-	usage
-	exit
+    usage
+    exit
 fi
-
-# compr. tool available?:
 if [ "$COMPRESS" == "true" ] ; then
-
-        if ! hash gzip 2>/dev/null; then
-                echo "Compression requires gzip. Not found. Exiting."
-                exit
-        fi
-	GZIP=gzip
-	OUT=$OUT.gz
-else
-	GZIP=cat
+    if ! hash gzip 2>/dev/null; then
+        echo "Compression requires gzip. Not found. Exiting."
+        exit
+    fi
+    GZIP=gzip
+    OUT=$OUT.gz
 fi
+export XMLLINT_INDENT='' #use this setting for single line XML normalization
 
-# now we should be able to go harvesting:
-export XMLLINT_INDENT=''
-## set initial vars for first harvest-iteration:
-resumptiontoken="dummy"
-url="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET"
-# harvest all identifiers and harvest records for each one
-while [ -n "$resumptiontoken" ] ; do
-    # harvest block of oai-identifiers
-    $GET "$url" > $TMPFILE
-    # prepare url for harvest of next block
-    resumptiontoken=`xmllint --xpath "$RESUMPTION_XP" $TMPFILE`
-    url="$BASE?verb=ListIdentifiers&resumptionToken=$resumptiontoken"
-    # show progress:
-    echo
-    echo $resumptiontoken
-    # extract oai-identifiers and harvest each one of them:
-    for i in `xmllint --xpath "$IDENTIFIERS_XP" $TMPFILE | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'` ; do
-        harvest $i
+# main harvest loop:
+URL="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET" 
+while [ -n "$RESUMPTIONTOKEN" ] ; do
+    retry "Fatal error obtaining identifiers from $URL" harvest_identifiers $URL
+    for i in `echo "$IDENTIFIERS" ` ; do
+        retry "Error harvesting record $i" harvest_record $i
     done
 done
-rm $TMPFILE
+
 echo "done"
+
