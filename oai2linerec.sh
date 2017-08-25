@@ -3,10 +3,11 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2017-08-22
+# @version: 2017-08-25
 
 # 2017-08-15: Added gzip compression.
 # 2017-08-22: Refactored to use retry-function for robustness, no more temporary files.
+# 2017-08-25: Fixed incorrect testing for failed actions, added 'verbose' and 'debug' options.
 
 
 usage()
@@ -20,6 +21,8 @@ Requires perl, wget and xmllint (version 20708 or better, part of the libxml2-ut
 
 OPTIONS:
    -h      Show this message
+   -v      Verbose, shows progress
+   -d      Debug mode, shows retries
    -c      Compress output
    -s      Specify a set to be harvested
    -p      Choose which metadata format ('metadataPrefix') to harvest
@@ -28,9 +31,18 @@ OPTIONS:
    -t      Define an 'until' date
 
 EXAMPLE:
-$0 -c -s sgd:register -p dcx -f 2012-01-20 -o results.txt -b http://services.kb.nl/mdo/oai
+$0 -v -c -s sgd:register -p dcx -f 2012-02-03T09:04:21Z -o results.txt -b http://services.kb.nl/mdo/oai
 
 EOF
+}
+
+progress()
+{
+    local out=$1
+
+    if [ "$VERBOSE" == "true" ] ; then
+        echo -en "$out"
+    fi
 }
 
 fail()
@@ -49,7 +61,6 @@ retry()
 {
     local msg=$1
     local cmd="${@: 2}"
-
     local n=1
     local max=3
     local delay=3
@@ -59,6 +70,9 @@ retry()
         if [[ $n -lt $max ]]; then
             ((n++))
             sleep $delay;
+            if [ "$DEBUG" == "true" ] ; then
+                echo "Retry:" $msg
+            fi 
         else
             fail $msg
         fi
@@ -69,26 +83,21 @@ retry()
 harvest_record()
 {
     local id=$1
+    local metadata="`$GET "$BASE?verb=GetRecord$PREFIX&identifier=$id" | xmllint --xpath "//*[local-name()='metadata']" - 2>/dev/null || return 1`" 
 
-    $GET "$BASE?verb=GetRecord$PREFIX&identifier=$id" | (xmllint --xpath "//*[local-name()='metadata']" - || return 1) | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT
- 
-    #show progress:    
-    echo -n "."
+    echo "$metadata" | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT    
+    progress "."
 }
 
 harvest_identifiers()
 {
     local url=$1
-
     local identifiers_xml="`$GET "$url" || return 1`"
-
-    IDENTIFIERS="`echo "$identifiers_xml" | (xmllint --xpath "$IDENTIFIERS_XP" - || return 1) | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'`" 
-    RESUMPTIONTOKEN="`echo "$identifiers_xml" | xmllint --xpath "$RESUMPTION_XP" - || return 1`"
+    local identifiers_selected="`echo "$identifiers_xml" | xmllint --xpath "$IDENTIFIERS_XP" - 2>/dev/null || return 1`"
+ 
+    IDENTIFIERS="`echo "$identifiers_selected" | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'`" 
+    RESUMPTIONTOKEN="`echo "$identifiers_xml" | xmllint --xpath "$RESUMPTION_XP" - 2>/dev/null || return 1`"
     URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
-    
-    # show progress:
-    echo
-    echo $RESUMPTIONTOKEN
 }
 
 # test basic requirements:
@@ -122,13 +131,20 @@ PREFIX=''
 URL=''
 RESUMPTIONTOKEN='dummy'
 GZIP=cat
+COMPRESS=false
+VERBOSE=false
+DEBUG=false
 
 # read commandline opions
-while getopts "hco:f:t:b:s:p:" OPTION ; do
+while getopts "hvdco:f:t:b:s:p:" OPTION ; do
      case $OPTION in
          h)
              usage
              exit 1
+             ;;
+         v)  VERBOSE=true
+             ;;
+         d)  DEBUG=true
              ;;
          c)  COMPRESS=true
              ;;
@@ -160,20 +176,21 @@ done
 # set and test parameters:
 if [ -z "$BASE" ] ; then
     usage
-    exit
+    exit 1
 fi
 if [ -z "$OUT" ] ; then
     usage
-    exit
+    exit 1
 fi
 if [ "$COMPRESS" == "true" ] ; then
     if ! hash gzip 2>/dev/null; then
         echo "Compression requires gzip. Not found. Exiting."
-        exit
+        exit 1
     fi
     GZIP=gzip
     OUT=$OUT.gz
 fi
+>$OUT
 export XMLLINT_INDENT='' #use this setting for single line XML normalization
 
 # main harvest loop:
@@ -183,7 +200,8 @@ while [ -n "$RESUMPTIONTOKEN" ] ; do
     for i in `echo "$IDENTIFIERS" ` ; do
         retry "Error harvesting record $i" harvest_record $i
     done
+    progress "\n$RESUMPTIONTOKEN\n\n"
 done
 
-echo "done"
-
+progress "done\n"
+exit 0
