@@ -3,11 +3,12 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2017-08-25
+# @version: 2017-08-28
 
 # 2017-08-15: Added gzip compression.
 # 2017-08-22: Refactored to use retry-function for robustness, no more temporary files.
 # 2017-08-25: Fixed incorrect testing for failed actions, added 'verbose' and 'debug' options.
+# 2017-08-28: New: harvest may now be paused and resumed. 
 
 
 usage()
@@ -17,6 +18,9 @@ usage: $0 [OPTIONS] -o [outfile] -b [baseURL]
 
 This is a simple OAI-PMH harvester. It harvests records, compresses the <metadata> node and its content to a single line
 and appends it to the outfile.
+
+The harvesting process can be paused by pressing 'p'. Restart harvest by supplying a resumptiontoken using '-r'.
+
 Requires perl, wget and xmllint (version 20708 or better, part of the libxml2-utils package) to be able to run.
 
 OPTIONS:
@@ -29,9 +33,10 @@ OPTIONS:
    -o      Define the output file records will be append to
    -f      Define a 'from' date.
    -t      Define an 'until' date
+   -r      Provide a resumptiontoken to continue a harvest
 
 EXAMPLE:
-$0 -v -c -s sgd:register -p dcx -f 2012-02-03T09:04:21Z -o results.txt -b http://services.kb.nl/mdo/oai
+$CMD -v -c -s sgd:register -p dcx -f 2012-02-03T09:04:21Z -o results.txt -b http://services.kb.nl/mdo/oai
 
 EOF
 }
@@ -100,7 +105,7 @@ harvest_identifiers()
     URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
 }
 
-# test basic requirements:
+# check for required environment:
 if ! hash perl 2>/dev/null; then
     echo "Requires perl. Not found. Exiting."
     exit
@@ -119,6 +124,7 @@ if ! hash xmllint 2>/dev/null; then
 fi
 
 # declare global vars:
+CMD=$0
 IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
 RESUMPTION_XP="//*[local-name()='resumptionToken']/text()"
 METADATA_XP="//*[local-name()='metadata']"
@@ -129,27 +135,33 @@ BASE=''
 SET=''
 PREFIX=''
 URL=''
-RESUMPTIONTOKEN='dummy'
+IDENTIFIERS=''
+RESUMPTIONTOKEN=''
 GZIP=cat
 COMPRESS=false
 VERBOSE=false
 DEBUG=false
+RESUMEPARAMS=''
 
 # read commandline opions
-while getopts "hvdco:f:t:b:s:p:" OPTION ; do
+while getopts "hvdco:f:t:b:s:p:r:" OPTION ; do
      case $OPTION in
          h)
              usage
              exit 1
              ;;
          v)  VERBOSE=true
+             RESUMEPARAMS="$RESUMEPARAMS -v "
              ;;
          d)  DEBUG=true
+             RESUMEPARAMS="$RESUMEPARAMS -d "	
              ;;
          c)  COMPRESS=true
+             RESUMEPARAMS="$RESUMEPARAMS -c "
              ;;
          o)
              OUT="$OPTARG"
+             RESUMEPARAMS="$RESUMEPARAMS -o $OPTARG "
              ;;
          f)
              FROM="&from=$OPTARG"
@@ -162,9 +174,13 @@ while getopts "hvdco:f:t:b:s:p:" OPTION ; do
              ;;
          b)
              BASE="$OPTARG"
+             RESUMEPARAMS="$RESUMEPARAMS -b $OPTARG "
              ;;
          p)
              PREFIX="&metadataPrefix=$OPTARG"
+             ;;
+         r)
+             RESUMPTIONTOKEN="$OPTARG"
              ;;
          ?)
              usage
@@ -190,17 +206,32 @@ if [ "$COMPRESS" == "true" ] ; then
     GZIP=gzip
     OUT=$OUT.gz
 fi
->$OUT
 export XMLLINT_INDENT='' #use this setting for single line XML normalization
 
+#
+if [ -z "$RESUMPTIONTOKEN" ] ; then
+    RESUMPTIONTOKEN='dummy'
+    URL="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET"
+    >$OUT
+else
+   progress "Continuing harvest with resumptiontoken $RESUMPTIONTOKEN\n"
+   URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
+fi
+
 # main harvest loop:
-URL="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET" 
 while [ -n "$RESUMPTIONTOKEN" ] ; do
+
+    if [ -n "$IDENTIFIERS" ] ; then
+        echo -en "[ Press p to pauze harvest ]"
+        read -t 1 -n 1 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN' $RESUMEPARAMS" && exit 1
+        echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+    fi
+
     retry "Fatal error obtaining identifiers from $URL" harvest_identifiers $URL
     for i in `echo "$IDENTIFIERS" ` ; do
         retry "Error harvesting record $i" harvest_record $i
     done
-    progress "\n$RESUMPTIONTOKEN\n\n"
+    progress "\n$RESUMPTIONTOKEN\n"
 done
 
 progress "done\n"
