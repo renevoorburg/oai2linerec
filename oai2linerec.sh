@@ -3,12 +3,13 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2017-08-28
+# @version: 2017-08-29
 
 # 2017-08-15: Added gzip compression.
 # 2017-08-22: Refactored to use retry-function for robustness, no more temporary files.
 # 2017-08-25: Fixed incorrect testing for failed actions, added 'verbose' and 'debug' options.
 # 2017-08-28: New: harvest may now be paused and resumed. 
+# 2017-08-29: New: log slow actions when in debug mode.
 
 
 usage()
@@ -69,6 +70,7 @@ retry()
     local n=1
     local max=3
     local delay=3
+    local tstart=`date "+%s"`
 
     while true; do
         $cmd && break || {
@@ -76,13 +78,22 @@ retry()
             ((n++))
             sleep $delay;
             if [ "$DEBUG" == "true" ] ; then
-                echo "Retry:" $msg
+                fail "Warning: retried action '$cmd'"
             fi 
         else
             fail $msg
         fi
         }
     done
+    
+    if [ "$DEBUG" == "true" ] ; then
+    	local tend=`date "+%s"`
+    	local tspend=$(($tend-$tstart))
+    	if  [ "$tspend" -ge "$LOGSLOW" ] ; then
+    		fail "Warning: slow ($tspend s) action '$cmd'"
+    	fi
+    fi
+    
 }
 
 harvest_record()
@@ -142,6 +153,7 @@ COMPRESS=false
 VERBOSE=false
 DEBUG=false
 RESUMEPARAMS=''
+LOGSLOW=2
 
 # read commandline opions
 while getopts "hvdco:f:t:b:s:p:r:" OPTION ; do
@@ -218,15 +230,19 @@ else
    URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
 fi
 
-# main harvest loop:
+# main loop:
 while [ -n "$RESUMPTIONTOKEN" ] ; do
 
+	# allow keypress 'p' to pause harvesting:
     if [ -n "$IDENTIFIERS" ] ; then
         echo -en "[ Press p to pauze harvest ]"
-        read -t 1 -n 1 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN' $RESUMEPARAMS" && exit 1
+        read -t 1 -n 2 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN' $RESUMEPARAMS" && exit 1
+        echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+        echo -en "                            "
         echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
     fi
 
+	# harvest: 
     retry "Fatal error obtaining identifiers from $URL" harvest_identifiers $URL
     for i in `echo "$IDENTIFIERS" ` ; do
         retry "Error harvesting record $i" harvest_record $i
