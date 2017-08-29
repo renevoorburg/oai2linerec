@@ -27,7 +27,7 @@ Requires perl, wget and xmllint (version 20708 or better, part of the libxml2-ut
 OPTIONS:
    -h      Show this message
    -v      Verbose, shows progress
-   -d      Debug mode, shows retries
+   -d      Debug mode, shows retries and slo
    -c      Compress output
    -s      Specify a set to be harvested
    -p      Choose which metadata format ('metadataPrefix') to harvest
@@ -163,17 +163,17 @@ while getopts "hvdco:f:t:b:s:p:r:" OPTION ; do
              exit 1
              ;;
          v)  VERBOSE=true
-             RESUMEPARAMS="$RESUMEPARAMS -v "
+             RESUMEPARAMS="$RESUMEPARAMS -v"
              ;;
          d)  DEBUG=true
-             RESUMEPARAMS="$RESUMEPARAMS -d "	
+             RESUMEPARAMS="$RESUMEPARAMS -d"	
              ;;
          c)  COMPRESS=true
-             RESUMEPARAMS="$RESUMEPARAMS -c "
+             RESUMEPARAMS="$RESUMEPARAMS -c"
              ;;
          o)
              OUT="$OPTARG"
-             RESUMEPARAMS="$RESUMEPARAMS -o $OPTARG "
+             RESUMEPARAMS="$RESUMEPARAMS -o $OPTARG"
              ;;
          f)
              FROM="&from=$OPTARG"
@@ -186,7 +186,7 @@ while getopts "hvdco:f:t:b:s:p:r:" OPTION ; do
              ;;
          b)
              BASE="$OPTARG"
-             RESUMEPARAMS="$RESUMEPARAMS -b $OPTARG "
+             RESUMEPARAMS="$RESUMEPARAMS -b $OPTARG"
              ;;
          p)
              PREFIX="&metadataPrefix=$OPTARG"
@@ -236,7 +236,7 @@ while [ -n "$RESUMPTIONTOKEN" ] ; do
 	# allow keypress 'p' to pause harvesting:
     if [ -n "$IDENTIFIERS" ] ; then
         echo -en "[ Press p to pauze harvest ]"
-        read -t 1 -n 2 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN' $RESUMEPARAMS" && exit 1
+        read -t 2 -n 1 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN' $RESUMEPARAMS" && exit 1
         echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
         echo -en "                            "
         echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
