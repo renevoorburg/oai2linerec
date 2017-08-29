@@ -12,6 +12,28 @@
 # 2017-08-29: New: log slow actions when in debug mode.
 
 
+# declare global vars:
+CMD=$0
+IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
+RESUMPTION_XP="//*[local-name()='resumptionToken']/text()"
+METADATA_XP="//*[local-name()='metadata']"
+OUT=''
+FROM=''
+UNTIL=''
+BASE=''
+SET=''
+PREFIX=''
+URL=''
+IDENTIFIERS=''
+RESUMPTIONTOKEN=''
+GZIP=cat
+COMPRESS=false
+VERBOSE=false
+DEBUG=false
+RESUMEPARAMS=''
+LOGSLOW=10
+
+
 usage()
 {
     cat << EOF
@@ -25,16 +47,16 @@ The harvesting process can be paused by pressing 'p'. Restart harvest by supplyi
 Requires perl, wget and xmllint (version 20708 or better, part of the libxml2-utils package) to be able to run.
 
 OPTIONS:
-   -h      Show this message
-   -v      Verbose, shows progress
-   -d      Debug mode, shows retries and slo
-   -c      Compress output
-   -s      Specify a set to be harvested
-   -p      Choose which metadata format ('metadataPrefix') to harvest
-   -o      Define the output file records will be append to
-   -f      Define a 'from' date.
-   -t      Define an 'until' date
-   -r      Provide a resumptiontoken to continue a harvest
+   -h          Show this message
+   -v          Verbose, shows progress
+   -d          Debug mode, shows retries and slow requests
+   -c          Compress output
+   -s  set     Specify a set to be harvested
+   -p  prefix  Choose which metadata format ('metadataPrefix') to harvest
+   -o  out     Define the output file records will be append to
+   -f  date    Define a 'from' date.
+   -t  date    Define an 'until' date
+   -r  token   Provide a resumptiontoken to continue a harvest
 
 EXAMPLE:
 $CMD -v -c -s sgd:register -p dcx -f 2012-02-03T09:04:21Z -o results.txt -b http://services.kb.nl/mdo/oai
@@ -116,6 +138,7 @@ harvest_identifiers()
     URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
 }
 
+
 # check for required environment:
 if ! hash perl 2>/dev/null; then
     echo "Requires perl. Not found. Exiting."
@@ -133,27 +156,6 @@ if ! hash xmllint 2>/dev/null; then
     echo "Requires xmllint. Not found. Exiting."
     exit
 fi
-
-# declare global vars:
-CMD=$0
-IDENTIFIERS_XP="//*[local-name()='header'][not(contains(@status, 'deleted'))]/*[local-name()='identifier']"
-RESUMPTION_XP="//*[local-name()='resumptionToken']/text()"
-METADATA_XP="//*[local-name()='metadata']"
-OUT=''
-FROM=''
-UNTIL=''
-BASE=''
-SET=''
-PREFIX=''
-URL=''
-IDENTIFIERS=''
-RESUMPTIONTOKEN=''
-GZIP=cat
-COMPRESS=false
-VERBOSE=false
-DEBUG=false
-RESUMEPARAMS=''
-LOGSLOW=2
 
 # read commandline opions
 while getopts "hvdco:f:t:b:s:p:r:" OPTION ; do
@@ -190,6 +192,7 @@ while getopts "hvdco:f:t:b:s:p:r:" OPTION ; do
              ;;
          p)
              PREFIX="&metadataPrefix=$OPTARG"
+             RESUMEPARAMS="$RESUMEPARAMS -p $OPTARG"
              ;;
          r)
              RESUMPTIONTOKEN="$OPTARG"
@@ -236,7 +239,7 @@ while [ -n "$RESUMPTIONTOKEN" ] ; do
 	# allow keypress 'p' to pause harvesting:
     if [ -n "$IDENTIFIERS" ] ; then
         echo -en "[ Press p to pauze harvest ]"
-        read -t 2 -n 1 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN' $RESUMEPARAMS" && exit 1
+        read -t 2 -n 1 key && [[ $key = p ]] && echo -e "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN'$RESUMEPARAMS" && exit 1
         echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
         echo -en "                            "
         echo -en "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
