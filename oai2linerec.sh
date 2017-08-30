@@ -66,7 +66,7 @@ EOF
 
 progress()
 {
-    local out=$1
+    local out="$1"
 
     if [ "$VERBOSE" == "true" ] ; then
         echo -en "$out"
@@ -75,7 +75,7 @@ progress()
 
 fail()
 {
-    local msg=$1
+    local msg="$1"
 
     echo $msg >&2
     if [[ $msg == fatal* ]] || [[ $msg == Fatal* ]] ; then
@@ -87,7 +87,7 @@ fail()
 
 retry() 
 {
-    local msg=$1
+    local msg="$1"
     local cmd="${@: 2}"
     local n=1
     local max=3
@@ -120,7 +120,7 @@ retry()
 
 harvest_record()
 {
-    local id=$1
+    local id="$1"
     local metadata="`$GET "$BASE?verb=GetRecord$PREFIX&identifier=$id" | xmllint --xpath "//*[local-name()='metadata']" - 2>/dev/null || return 1`" 
 
     echo "$metadata" | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT    
@@ -129,7 +129,7 @@ harvest_record()
 
 harvest_identifiers()
 {
-    local url=$1
+    local url="$1"
     local identifiers_xml="`$GET "$url" || return 1`"
     local identifiers_selected="`echo "$identifiers_xml" | xmllint --xpath "$IDENTIFIERS_XP" - 2>/dev/null || return 1`"
  
@@ -246,9 +246,9 @@ while [ -n "$RESUMPTIONTOKEN" ] ; do
     fi
 
 	# harvest: 
-    retry "Fatal error obtaining identifiers from $URL" harvest_identifiers $URL
+    retry "Fatal error obtaining identifiers from $URL" harvest_identifiers "$URL"
     for i in `echo "$IDENTIFIERS" ` ; do
-        retry "Error harvesting record $i" harvest_record $i
+        retry "Error harvesting record $i" harvest_record "$i"
     done
     progress "\n$RESUMPTIONTOKEN\n"
 done
