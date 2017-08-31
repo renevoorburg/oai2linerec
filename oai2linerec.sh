@@ -3,13 +3,14 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2017-08-29
+# @version: 2017-08-31
 
 # 2017-08-15: Added gzip compression.
 # 2017-08-22: Refactored to use retry-function for robustness, no more temporary files.
 # 2017-08-25: Fixed incorrect testing for failed actions, added 'verbose' and 'debug' options.
 # 2017-08-28: New: harvest may now be paused and resumed. 
 # 2017-08-29: New: log slow actions when in debug mode.
+# 2017-08-31: Improved logging, better error handling.
 
 
 # declare global vars:
@@ -76,8 +77,9 @@ progress()
 fail()
 {
     local msg="$1"
+    local date=`date "+%Y-%m-%d %H:%M:%S"`
 
-    echo $msg >&2
+    echo "$date $msg" >&2
     if [[ $msg == fatal* ]] || [[ $msg == Fatal* ]] ; then
         exit 1
     else
@@ -122,8 +124,8 @@ harvest_record()
 {
     local id="$1"
     local metadata="`$GET "$BASE?verb=GetRecord$PREFIX&identifier=$id" | xmllint --xpath "//*[local-name()='metadata']" - 2>/dev/null || return 1`" 
-
-    echo "$metadata" | xmllint --format - | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT    
+    local payload="`echo "$metadata" | xmllint --format - 2>/dev/null || return 1`"    
+    echo "$payload" | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT    
     progress "."
 }
 
