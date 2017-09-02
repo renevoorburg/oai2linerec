@@ -3,7 +3,7 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2.0 dd 2017-09-01
+# @version: 2.0 dd 2017-09-02
 
 # 2017-09-01: The 'retries now actually works' version with improved logging, cleaner code.
 
@@ -16,7 +16,6 @@ WGET='wget -q -t 3 -O -'
 COMPRESS=false
 VERBOSE=false
 DEBUG=false
-RESUMEPARAMS=''
 GZIP=cat
 
 # no need to change these:
@@ -35,6 +34,7 @@ PREFIX=''
 URL=''
 IDENTIFIERS=''
 RESUMPTIONTOKEN=''
+RESUMEPARAMS=''
 
 #required for single line XML normalization:
 export XMLLINT_INDENT='' 
@@ -278,7 +278,7 @@ main()
 
 		# allow keypress 'p' to pause harvesting:
 		if [ -n "$IDENTIFIERS" ] ; then
-			exit_keypress "p" "[ Press p to pauze harvest ]" "\nHarvest paused.\nContinue harvest with $CMD -r '$RESUMPTIONTOKEN'$RESUMEPARAMS"
+			exit_keypress "p" "[ Press p to pauze harvest ]" "\nHarvest paused.\nContinue harvest with $PROG -r '$RESUMPTIONTOKEN'$RESUMEPARAMS"
 		fi
 
 		# harvest: 
@@ -298,11 +298,3 @@ main()
 get_parameters "$@"
 main
 exit 0
-
-
-
-
-
-
-
-
