@@ -3,9 +3,10 @@
 # A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
 # Requires perl, wget and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2.0 dd 2017-09-02
+# @version: 2.0 dd 2017-09-05
 
 # 2017-09-01: The 'retries now actually works' version with improved logging, cleaner code.
+# 2017-09-05: Urlencodes identifiers.
 
 ## declare global vars:
 
@@ -123,9 +124,28 @@ retry()
     return $ret
 }
 
+rawurlencode() 
+{
+  local string="${1}"
+  local strlen=${#string}
+  local encoded=""
+  local pos c o
+
+  for (( pos=0 ; pos<strlen ; pos++ )); do
+     c=${string:$pos:1}
+     case "$c" in
+        [-_.~a-zA-Z0-9] ) o="${c}" ;;
+        * )               printf -v o '%%%02x' "'$c"
+     esac
+     encoded+="${o}"
+  done
+  echo "${encoded}"
+}
+
+
 harvest_record()
 {
-    local id="$1"
+    local id=$(rawurlencode "$1")
     local metadata
     local payload
     
