@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# A simple OAI-PMH harvester. Harvests records, aggregates them to one file, one line per record.
-# Requires perl, wget and xmllint (version 20708 or higher).
+# A Unix shell script for harvesting metadata records from OAI-PMH repositories. Tested on macOS and Unix / Linux.
+# Records are aggregated in a single file, serialized to a single record per line. 
+# Optionally, individual records can be compressed to save space.
+
+# Requires perl, wget or curl and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
 # @version: 2.0 dd 2017-09-05
 
@@ -141,7 +144,6 @@ rawurlencode()
   done
   echo "${encoded}"
 }
-
 
 harvest_record()
 {
