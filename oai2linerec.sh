@@ -6,10 +6,11 @@
 
 # Requires perl, wget or curl and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2.0 dd 2017-09-05
+# @version: 2.02 dd 2017-09-11
 
 # 2017-09-01: The 'retries now actually works' version with improved logging, cleaner code.
 # 2017-09-05: Urlencodes identifiers.
+# 2017-09-11: Fixes issue #2; harvesting should not stop when no ids found but resumption token is available.
 
 ## declare global vars:
 
@@ -166,16 +167,19 @@ harvest_identifiers()
     local url="$1"
     local identifiers_xml
     local identifiers_selected
+    local ret_ids_found
+    local ret_resumption_found
     
     identifiers_xml="`$GET "$url"`"
     if [ $? -ne 0 ] ; then return 1 ; fi
     
     identifiers_selected="`echo "$identifiers_xml" | xmllint --xpath "$IDENTIFIERS_XP" - 2>/dev/null`"
-    if [ $? -ne 0 ] ; then return 1 ; fi
+    ret_ids_found=$?
+    RESUMPTIONTOKEN="`echo "$identifiers_xml" | xmllint --xpath "$RESUMPTION_XP" - 2>/dev/null`"
+    ret_resumption_found=$?    
+    if [ $ret_ids_found -ne 0 ] && [ $ret_resumption_found -ne 0 ] ; then return 1 ; fi
  
     IDENTIFIERS="`echo "$identifiers_selected" | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'`" 
-    RESUMPTIONTOKEN="`echo "$identifiers_xml" | xmllint --xpath "$RESUMPTION_XP" - 2>/dev/null`"
-    
     URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
 }
 
