@@ -1,16 +1,17 @@
 #!/bin/bash
 
 # A Unix shell script for harvesting metadata records from OAI-PMH repositories. Tested on macOS and Unix / Linux.
-# Records are aggregated in a single file, serialized to a single record per line. 
+# Records are aggregated in a single file, serialized to a single record per line.
 # Optionally, individual records can be compressed to save space.
 
 # Requires perl, wget or curl and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2.02 dd 2017-09-11
+# @version: 2.1 dd 2017-09-19
 
 # 2017-09-01: The 'retries now actually works' version with improved logging, cleaner code.
 # 2017-09-05: Urlencodes identifiers.
 # 2017-09-11: Fixes issue #2; harvesting should not stop when no ids found but resumption token is available.
+# 2017-09-19: Adds an option to harvest using a list of identifiers.
 
 ## declare global vars:
 
@@ -40,9 +41,10 @@ URL=''
 IDENTIFIERS=''
 RESUMPTIONTOKEN=''
 RESUMEPARAMS=''
+IDSFILE=''
 
 #required for single line XML normalization:
-export XMLLINT_INDENT='' 
+export XMLLINT_INDENT=''
 
 
 usage()
@@ -68,6 +70,7 @@ OPTIONS:
    -f  date    Define a 'from' date.
    -t  date    Define an 'until' date
    -r  token   Provide a resumptiontoken to continue a harvest
+   -i  idfile  Provide a list of identifiers to harvest.
 
 EXAMPLE:
 $PROG -v -c -s sgd:register -p dcx -f 2012-02-03T09:04:23Z -o results.txt -b http://services.kb.nl/mdo/oai
@@ -92,7 +95,7 @@ log()
     echo "$date $msg" >&2
 }
 
-retry() 
+retry()
 {
     local cmd="$@"
     local ret=0
@@ -124,11 +127,11 @@ retry()
     		log "Warning: '$cmd' slow ($tspend s)."
     	fi
     fi
-    
+
     return $ret
 }
 
-rawurlencode() 
+rawurlencode()
 {
   local string="${1}"
   local strlen=${#string}
@@ -151,14 +154,14 @@ harvest_record()
     local id=$(rawurlencode "$1")
     local metadata
     local payload
-    
+
     metadata="`$GET "$BASE?verb=GetRecord$PREFIX&identifier=$id" | xmllint --xpath "//*[local-name()='metadata']" - 2>/dev/null`"
     if [ $? -ne 0 ] ; then return 1 ; fi
-     
+
     payload="`echo "$metadata" | xmllint --format - 2>/dev/null`" 
     if [ $? -ne 0 ] ; then return 1 ; fi
-       
-    echo "$payload" | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT    
+
+    echo "$payload" | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT
     show_progress "."
 }
 
@@ -169,25 +172,25 @@ harvest_identifiers()
     local identifiers_selected
     local ret_ids_found
     local ret_resumption_found
-    
+
     identifiers_xml="`$GET "$url"`"
     if [ $? -ne 0 ] ; then return 1 ; fi
-    
+
     identifiers_selected="`echo "$identifiers_xml" | xmllint --xpath "$IDENTIFIERS_XP" - 2>/dev/null`"
     ret_ids_found=$?
     RESUMPTIONTOKEN="`echo "$identifiers_xml" | xmllint --xpath "$RESUMPTION_XP" - 2>/dev/null`"
-    ret_resumption_found=$?    
+    ret_resumption_found=$?
     if [ $ret_ids_found -ne 0 ] && [ $ret_resumption_found -ne 0 ] ; then return 1 ; fi
- 
-    IDENTIFIERS="`echo "$identifiers_selected" | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'`" 
+
+    IDENTIFIERS="`echo "$identifiers_selected" | perl -pe 's@</identifier[^\S\n]*>@\n@g' | perl -pe 's@<identifier[^\S\n]*>@@'`"
     URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
 }
 
 
 get_parameters()
 {
-	local option 
-	
+	local option
+
 	# check for required environment:
 	if ! hash perl 2>/dev/null; then
 		echo "Requires perl. Not found. Exiting."
@@ -205,9 +208,9 @@ get_parameters()
 		echo "Requires xmllint. Not found. Exiting."
 		exit 1
 	fi
-	
+
 	# read commandline opions
-	while getopts "hvdco:f:t:b:s:p:r:" option ; do
+	while getopts "hvdco:f:t:b:s:p:r:i:" option ; do
 		 case $option in
 			 h)
 				 usage
@@ -217,7 +220,7 @@ get_parameters()
 				 RESUMEPARAMS="$RESUMEPARAMS -v"
 				 ;;
 			 d)  DEBUG=true
-				 RESUMEPARAMS="$RESUMEPARAMS -d"	
+				 RESUMEPARAMS="$RESUMEPARAMS -d"
 				 ;;
 			 c)  COMPRESS=true
 				 RESUMEPARAMS="$RESUMEPARAMS -c"
@@ -246,6 +249,8 @@ get_parameters()
 			 r)
 				 RESUMPTIONTOKEN="$OPTARG"
 				 ;;
+			 i)	 IDSFILE="$OPTARG"
+				 ;;
 			 ?)
 				 usage
 				 exit
@@ -271,16 +276,22 @@ get_parameters()
 		GZIP=gzip
 	 	OUT=$OUT.gz
 	fi
-	
+
 	#
-	if [ -z "$RESUMPTIONTOKEN" ] ; then
+	if [ -n "$RESUMPTIONTOKEN" ] ; then
+		URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
+	elif [ -n "$IDSFILE" ] ; then
+		if [ ! -e "$IDSFILE" ] ; then
+			echo "File $IDSFILE (containing identifiers) not found. Exiting."
+			exit 1
+		fi
+		RESUMPTIONTOKEN='dummy'
+	else
 		RESUMPTIONTOKEN='dummy'
 		URL="$BASE?verb=ListIdentifiers$FROM$UNTIL$PREFIX$SET"
 		>$OUT
-	else
-	   URL="$BASE?verb=ListIdentifiers&resumptionToken=$RESUMPTIONTOKEN"
 	fi
-	
+
 }
 
 exit_keypress()
@@ -288,7 +299,7 @@ exit_keypress()
 	local listen="$1"
 	local msg="$2"
 	local alert="$3"
-	
+
 	echo -en "$msg"
 	read -t 2 -n 1 key && [[ $key = "$listen" ]] && echo -e "\n$alert" && exit 1
 	printf '\b%.0s' {1..100}
@@ -307,10 +318,15 @@ main()
 			exit_keypress "p" "[ Press p to pauze harvest ]" "\nHarvest paused.\nContinue harvest with $PROG -r '$RESUMPTIONTOKEN'$RESUMEPARAMS"
 		fi
 
-		# harvest: 
-		retry harvest_identifiers "$URL"
-		if [ $? -ne 0 ] ; then exit 1 ; fi
-	
+		# get identifiers:
+		if [ -z "$IDSFILE" ] ; then
+			retry harvest_identifiers "$URL"
+			if [ $? -ne 0 ] ; then exit 1 ; fi
+		else
+			IDENTIFIERS="`cat $IDSFILE`"
+			RESUMPTIONTOKEN=""
+		fi
+
 		for id in `echo "$IDENTIFIERS" ` ; do
 			retry harvest_record "$id"
 		done
