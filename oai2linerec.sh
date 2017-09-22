@@ -6,12 +6,16 @@
 
 # Requires perl, wget or curl and xmllint (version 20708 or higher).
 # @author: René Voorburg / rene.voorburg@kb.nl
-# @version: 2.1 dd 2017-09-19
+# @version: 2.2 dd 2017-09-22
 
 # 2017-09-01: The 'retries now actually works' version with improved logging, cleaner code.
 # 2017-09-05: Urlencodes identifiers.
 # 2017-09-11: Fixes issue #2; harvesting should not stop when no ids found but resumption token is available.
 # 2017-09-19: Adds an option to harvest using a list of identifiers.
+# 2017-09-22: Allows users to circumvent serialization to a single line. Best in combination with compressed records.
+
+# we need this:
+set +H
 
 ## declare global vars:
 
@@ -23,6 +27,7 @@ COMPRESS=false
 VERBOSE=false
 DEBUG=false
 GZIP=cat
+POSTPROCESS="perl -p00e 's@\n(?!\Z)@ @g'"
 
 # no need to change these:
 PROG=$0
@@ -64,6 +69,7 @@ OPTIONS:
    -v          Verbose, shows progress
    -d          Debug mode, shows retries and slow requests
    -c          Compress output
+   -n          Do not serialize records to a single line.
    -s  set     Specify a set to be harvested
    -p  prefix  Choose which metadata format ('metadataPrefix') to harvest
    -o  out     Define the output file records will be append to
@@ -161,7 +167,7 @@ harvest_record()
     payload="`echo "$metadata" | xmllint --format - 2>/dev/null`" 
     if [ $? -ne 0 ] ; then return 1 ; fi
 
-    echo "$payload" | perl -pe 's@\n@@gi' | perl -pe 's@$@\n@' | $GZIP >> $OUT
+    echo "$payload" | eval "$POSTPROCESS" | $GZIP >> $OUT
     show_progress "."
 }
 
@@ -210,7 +216,7 @@ get_parameters()
 	fi
 
 	# read commandline opions
-	while getopts "hvdco:f:t:b:s:p:r:i:" option ; do
+	while getopts "hvdcno:f:t:b:s:p:r:i:" option ; do
 		 case $option in
 			 h)
 				 usage
@@ -225,6 +231,8 @@ get_parameters()
 			 c)  COMPRESS=true
 				 RESUMEPARAMS="$RESUMEPARAMS -c"
 				 ;;
+		     n)  POSTPROCESS=cat
+		         ;;	
 			 o)
 				 OUT="$OPTARG"
 				 RESUMEPARAMS="$RESUMEPARAMS -o $OPTARG"
